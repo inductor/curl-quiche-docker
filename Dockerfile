@@ -1,0 +1,44 @@
+FROM debian:buster-slim as base
+RUN apt-get update && apt-get install -y git build-essential pkg-config
+
+FROM base as fetch-quiche
+WORKDIR /root
+RUN git clone --recursive --depth 1 https://github.com/cloudflare/quiche
+RUN mkdir quiche/deps/boringssl/build
+WORKDIR /root/quiche/deps/boringssl/build
+RUN apt-get update && apt-get install -y cmake golang-go
+RUN cmake -DCMAKE_POSITION_INDEPENDENT_CODE=on ..
+RUN make -j`nproc`
+WORKDIR /root/quiche/deps/boringssl
+RUN mkdir .openssl/lib -p
+RUN cp build/crypto/libcrypto.a build/ssl/libssl.a .openssl/lib
+RUN ln -s $PWD/include .openssl
+
+FROM base as build-quiche
+WORKDIR /root
+RUN apt-get update && apt-get install -y wget && \
+    wget https://sh.rustup.rs -O install.sh && chmod +x install.sh && ./install.sh -y && rm -rf install.sh && \
+    apt-get purge -y --auto-remove wget
+COPY --from=fetch-quiche /root/quiche /root/quiche
+WORKDIR  /root/quiche/
+RUN QUICHE_BSSL_PATH=$PWD/deps/boringssl $HOME/.cargo/bin/cargo build --release --features pkg-config-meta
+
+FROM base as build-curl
+WORKDIR /root
+RUN git clone --depth 1 https://github.com/curl/curl
+WORKDIR /root/curl
+RUN apt-get update && apt-get install -y autoconf libtool
+RUN ./buildconf
+COPY --from=build-quiche /root/quiche /root/quiche
+RUN ./configure LDFLAGS="-Wl,-rpath,$PWD/../quiche/target/release" --with-ssl=$PWD/../quiche/deps/boringssl/.openssl --with-quiche=$PWD/../quiche/target/release
+RUN make -j`nproc`
+RUN make install
+
+FROM debian:buster-slim as executor
+COPY --from=build-curl /etc/ld.so.conf.d/libc.conf /etc/ld.so.conf.d/libcurl.conf
+COPY --from=build-curl /usr/local/lib/libcurl.so.4 /usr/local/lib/libcurl.so.4
+COPY --from=build-curl /etc/ld.so.conf.d/libc.conf /etc/ld.so.conf.d/libquiche.conf
+COPY --from=build-curl /root/quiche/target/release/libquiche.so /usr/local/lib/libquiche.so
+COPY --from=build-curl /usr/local/bin/curl /usr/local/bin/curl
+RUN ldconfig
+CMD ["bash"]
