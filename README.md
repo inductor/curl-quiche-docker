@@ -8,7 +8,7 @@ docker run --rm -it inductor/curl-quiche
 ```
 
 ### If you want to build the image by yourself
-Note: For high-efficient concurrent building, I strongly recommend you to use BuildKit
+Note: For high-efficient concurrent building, I strongly recommend you to use BuildKit  
 Use Docker 18.09.x or later
 
 ```
