@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y wget ca-certificates && \
         && chmod +x install.sh \
         && ./install.sh -y \
         && rm -rf install.sh && \
-        apt-get purge -y --auto-remove wget ca-certificates
+        apt-get purge -y --auto-remove wget
 COPY --from=prepare-quiche /root/quiche /root/quiche
 WORKDIR /root/quiche/
 RUN QUICHE_BSSL_PATH=$PWD/deps/boringssl \
